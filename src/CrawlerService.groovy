@@ -18,6 +18,7 @@ import static groovy.json.JsonOutput.prettyPrint
 @Field mongo = new GMongo( "localhost" )
 @Field db = mongo.getDB( "test-lang-data" )
 
+headers = []
 afterId = ""
 datasetCount = 0
 accessToken = ""
@@ -28,10 +29,11 @@ authExpires = 0
 config = new ConfigSlurper().parse( new File("src/config.groovy").toURL(  ) )
 
 def doPreRequestWork( scope ) {
-    if (tokenExpired(  ))
-        getAuthToken( true )
+//    if (tokenExpired(  ))
+//        getAuthToken( )
 
     headers = [ 'User-Agent': 'lobdellio_crawler/0.1 by lobdellio', "Authorization": "bearer $accessToken" ]
+    println( "pausing..." )
     sleep( 2000 )
 }
 
@@ -48,7 +50,7 @@ def printResponse( res ) {
     }
     println "Finished Writing file."
 }
-def getAuthToken ( isRefresh ) {
+def getAuthToken ( ) {
     def authResponse
     def appId = config.reddit.appId
     def appSecret = config.reddit.appSecret
@@ -56,25 +58,20 @@ def getAuthToken ( isRefresh ) {
             "Authorization": "Basic ${ "$appId:$appSecret".bytes.encodeBase64().toString() }",
             "Content-Type": "application/json"]
 
-    //def grantType = isRefresh ? "refresh_token" : "password"
     def postUrl = "https://ssl.reddit.com/api/v1/access_token?grant_type=password&username=$config.reddit.username&password=$config.reddit.password&duration=permanent"
 
-//    if (isRefresh)
-//        postUrl += "&refresh_token=$refreshToken"
-
-    authResponse = api.post( uri: postUrl, headers: postHeaders, requestContentType: URLENC)
+    authResponse = api.post( uri: postUrl, headers: postHeaders, requestContentType: URLENC, body: ["grant_type": "client_credentials"])
 
     printResponse( authResponse )
 
     authTime = new Date()
     accessToken = authResponse.data.access_token
-  //  refreshToken = authResponse.refresh_token
     authExpires = authResponse.data.expires_in
 
     println( "Token: $accessToken, Auth Time: $authTime, Expires In: $authExpires" )
 }
 
-getAuthToken( false )
+getAuthToken( )
 
 def subreddits = [ "haskell" ]
 subreddits.each {
@@ -87,14 +84,14 @@ def getSubredditData( subreddit, query ) {
     doPreRequestWork( "outer" )
     try {
         def response = api.get(
-                uri: "https://www.reddit.com/r/$subreddit/new/.json$query",
+                uri: "https://oauth.reddit.com/r/$subreddit/new/.json$query",
                 headers: headers )
 
 
         response.data.data.children.each { story ->
             doPreRequestWork( "inner" )
             def commentsResponse = api.get(
-                    uri: "http://www.reddit.com${ story.data.permalink }.json",
+                    uri: "https://oauth.reddit.com${ story.data.permalink }.json",
                     headers: headers )
 
             def listing = commentsResponse.data[ 0 ].data.children[ 0 ].data
@@ -164,6 +161,7 @@ def getSubredditData( subreddit, query ) {
             getSubredditData subreddit, "?after=$afterId&limit=100"
     } catch ( HttpResponseException ex ) {
         def error = ex;
+        println( "Exception: ${ ex.response.getMessage(  ) }" )
     }
 
 
